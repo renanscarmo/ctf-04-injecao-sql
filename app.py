@@ -1,11 +1,12 @@
-import secrets
+import os
 import sqlite3
 
 from flask import Flask, request
+from werkzeug.security import check_password_hash
 
 app = Flask(__name__)
 
-FLAG = "FLAG{injecao_sql_abriu_a_porta}"
+FLAG = "FLAG{injecao_sql_corrigida}"
 BANCO = "loja.db"
 
 FORMULARIO = """
@@ -21,9 +22,11 @@ FORMULARIO = """
 def iniciar_banco():
     conexao = sqlite3.connect(BANCO)
     conexao.execute("DROP TABLE IF EXISTS usuarios")
-    conexao.execute("CREATE TABLE usuarios (usuario TEXT, senha TEXT)")
-    sorteada = secrets.token_urlsafe(16)
-    conexao.execute("INSERT INTO usuarios VALUES (?, ?)", ("admin", sorteada))
+    conexao.execute("CREATE TABLE usuarios (usuario TEXT, senha_hash TEXT)")
+    conexao.execute(
+        "INSERT INTO usuarios VALUES (?, ?)",
+        ("admin", os.environ.get("ADMIN_SENHA_HASH", "")),
+    )
     conexao.commit()
     conexao.close()
 
@@ -33,15 +36,13 @@ def login():
     if request.method == "POST":
         usuario = request.form.get("usuario", "")
         senha = request.form.get("senha", "")
-        consulta = (
-            f"SELECT * FROM usuarios WHERE usuario = '{usuario}' "
-            f"AND senha = '{senha}'"
-        )
         conexao = sqlite3.connect(BANCO)
-        resultado = conexao.execute(consulta).fetchone()
+        linha = conexao.execute(
+            "SELECT senha_hash FROM usuarios WHERE usuario = ?", (usuario,)
+        ).fetchone()
         conexao.close()
-        if resultado:
-            return f"<h1>Bem-vindo, {resultado[0]}!</h1><p>{FLAG}</p>"
+        if linha and check_password_hash(linha[0], senha):
+            return f"<h1>Bem-vindo!</h1><p>{FLAG}</p>"
         return FORMULARIO + "<p>Usuario ou senha incorretos.</p>"
     return FORMULARIO
 
